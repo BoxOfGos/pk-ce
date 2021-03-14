@@ -1,0 +1,26 @@
+{
+    "nodeNames": [
+        "Name",
+        "Name",
+        "Name"
+    ],
+    "nodeDescriptions": [
+        "Description",
+        "Description",
+        "Description"
+    ],
+    "nodePositions": [
+        {
+            "x": 1125.0,
+            "y": 282.0
+        },
+        {
+            "x": 1338.0,
+            "y": 186.0
+        },
+        {
+            "x": 1365.0,
+            "y": 359.0
+        }
+    ]
+}
