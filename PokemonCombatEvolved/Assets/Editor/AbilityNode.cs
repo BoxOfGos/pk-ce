@@ -35,7 +35,15 @@ public class AbilityNode
         switch(e.type)
         {
             case EventType.MouseDown:
-                editor.activeNode = this;
+                if (e.shift)
+                {
+                    if (!editor.selectedNodes.Contains(this))
+                        editor.selectedNodes.Add(this);
+                    else editor.selectedNodes.Remove(this);
+                }
+                else
+                    editor.selectedNodes = new List<AbilityNode> { this };
+
                 if (e.button == 1)
                 {
                     GenericMenu myMenu = new GenericMenu();

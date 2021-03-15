@@ -6,14 +6,15 @@ using System.IO;
 
 public class AbilityTreeEditor : EditorWindow
 {
+    public float gridSize = 2000f;
     public Vector2 gridScroll = new Vector2();
     public Rect gridRect;
     public Vector2 dataScroll = new Vector2();
     public Rect dataRect;
 
     public string treeName = "My Ability Tree";
-    public List<AbilityNode> myNodes = new List<AbilityNode>();
-    public AbilityNode activeNode;
+    public List<AbilityNode> nodes = new List<AbilityNode>();
+    public List<AbilityNode> selectedNodes = new List<AbilityNode>();
 
     [MenuItem("Window/Pokemon/AbilityTreeEditor")]
     public static void ShowEditor()
@@ -60,11 +61,13 @@ public class AbilityTreeEditor : EditorWindow
             SaveTreeAs();
 
 
-
-        if (GUI.Button(new Rect(10, position.height - 50, 200, 30), new GUIContent("Test button")))
+        if (GUI.Button(new Rect(10, 90, 200, 30), new GUIContent("Test button")))
         {
-            
+            Debug.Log(selectedNodes.Count);
         }
+
+        DrawMap(120);
+
 
         GUIStyle myStyle = new GUIStyle();
         myStyle.fontSize = 30;
@@ -76,9 +79,39 @@ public class AbilityTreeEditor : EditorWindow
         if (GUI.changed) Repaint();
     }
 
+    private void DrawMap(float size)
+    {
+        Vector2 mapSize = new Vector2(size, size);
+        GUILayout.BeginArea(new Rect(5, position.height - size - 20, size, size));
+        GUI.backgroundColor = new Color(0, 0, 0, 0.5f);
+        GUI.Box(new Rect(0, 0, size, size), "");
+        GUI.backgroundColor = new Color(1, 1, 1, 0.5f);
+        GUI.Box(new Rect(2, 2, size - 4, size - 4), "");
+        GUI.backgroundColor = Color.clear;
+        for (int i = 0; i < nodes.Count; i++)
+        {
+
+            int selectedIndex = selectedNodes.IndexOf(nodes[i]);
+            if (selectedIndex > -1)
+            {
+                if (selectedIndex == selectedNodes.Count - 1)
+                    GUI.contentColor = Color.green;
+                else GUI.contentColor = Color.yellow;
+            }
+            else GUI.contentColor = Color.black;
+
+
+            Vector2 nodePosition = new Vector2
+                (nodes[i].rect.position.x / 2000f * size, nodes[i].rect.position.y / 2000f * size);
+            GUI.Box(new Rect(nodePosition.x, nodePosition.y, 13, 13), (Texture)Resources.Load("Editor/circle"));
+        }
+        GUI.contentColor = GUI.backgroundColor = Color.white;
+        GUILayout.EndArea();
+    }
+
     private void SaveTree()
     {
-        AbilityTreeSerializable dataTree = new AbilityTreeSerializable(myNodes);
+        AbilityTreeSerializable dataTree = new AbilityTreeSerializable(this);
         string jsonTree = JsonUtility.ToJson(dataTree, true);
 
         File.WriteAllText("Assets/Resources/Data/Ability Trees/" + treeName + ".json", jsonTree);
@@ -87,7 +120,7 @@ public class AbilityTreeEditor : EditorWindow
 
     private void SaveTreeAs()
     {
-        AbilityTreeSerializable dataTree = new AbilityTreeSerializable(myNodes);
+        AbilityTreeSerializable dataTree = new AbilityTreeSerializable(this);
         string jsonTree = JsonUtility.ToJson(dataTree, true);
 
         string saveLocation = EditorUtility.SaveFilePanel
@@ -116,10 +149,11 @@ public class AbilityTreeEditor : EditorWindow
 
             // Populate the editor
             treeName = treeFile.name;
-            myNodes = new List<AbilityNode>();
+            nodes = new List<AbilityNode>();
             for (int i = 0; i < tree.nodeNames.Length; i++)
             {
-                myNodes.Add(new AbilityNode(this, tree.nodePositions[i])
+                Vector2 position = tree.nodePositions[i];
+                nodes.Add(new AbilityNode(this, position * gridSize)
                 {
                     name = tree.nodeNames[i],
                     description = tree.nodeDescriptions[i]
@@ -144,13 +178,19 @@ public class AbilityTreeEditor : EditorWindow
 
 
         BeginWindows();
-        for (int i = 0; i < myNodes.Count; i++)
+        for (int i = 0; i < nodes.Count; i++)
         {
-            GUI.color = Color.white;
-            AbilityNode node = myNodes[i];
+            AbilityNode node = nodes[i];
 
-            if (node == activeNode)
-                GUI.color = Color.yellow;
+            int selectedIndex = selectedNodes.IndexOf(node);
+            if (selectedIndex > -1)
+            {
+                if (selectedIndex == selectedNodes.Count - 1)
+                    GUI.color = Color.green;
+                else GUI.color = Color.yellow;
+            }
+            else GUI.color = Color.white;
+
             node.Draw(i);
         }
         GUI.color = Color.white;
@@ -159,23 +199,24 @@ public class AbilityTreeEditor : EditorWindow
 
     private void DrawNodeData()
     {
-        if (activeNode != null)
+        if (selectedNodes.Count > 0)
         {
+            AbilityNode dataNode = selectedNodes[selectedNodes.Count - 1];
+
             EditorGUILayout.BeginVertical();
 
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField("Name", GUILayout.Width(100));
-            activeNode.name = EditorGUILayout.DelayedTextField(activeNode.name);
+            dataNode.name = EditorGUILayout.DelayedTextField(dataNode.name);
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField("Description", GUILayout.Width(100));
-            activeNode.description = EditorGUILayout.DelayedTextField(activeNode.description);
+            dataNode.description = EditorGUILayout.DelayedTextField(dataNode.description);
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.EndVertical();
         }
-
     }
 
     private void ProcessEvents(Event e)
@@ -207,21 +248,20 @@ public class AbilityTreeEditor : EditorWindow
 
     private void CreateNewNode(Vector2 position)
     {
-        myNodes.Add(new AbilityNode(this, position));
+        nodes.Add(new AbilityNode(this, position));
     }
 
     public void DeleteNode(AbilityNode node)
     {
-        myNodes.Remove(node);
-        if (activeNode == node)
-            activeNode = null;
+        nodes.Remove(node);
+        selectedNodes.Remove(node);
     }
 
     public void ResetEditor()
     {
         treeName = "My Ability Tree";
-        myNodes = new List<AbilityNode>();
-        activeNode = null;
+        nodes = new List<AbilityNode>();
+        selectedNodes = new List<AbilityNode>();
     }
 }
 
@@ -237,9 +277,10 @@ public class AbilityTreeSerializable
 
     }
 
-    public AbilityTreeSerializable(List<AbilityNode> nodeList)
+    public AbilityTreeSerializable(AbilityTreeEditor editor)
     {
-        int arraySize = nodeList.Count;
+        List<AbilityNode> nodes = editor.nodes;
+        int arraySize = nodes.Count;
 
         nodeNames = new string[arraySize];
         nodeDescriptions = new string[arraySize];
@@ -247,9 +288,9 @@ public class AbilityTreeSerializable
 
         for (int i = 0; i < arraySize; i++)
         {
-            nodeNames[i] = nodeList[i].name;
-            nodeDescriptions[i] = nodeList[i].description;
-            nodePositions[i] = nodeList[i].rect.position;
+            nodePositions[i] = nodes[i].rect.position / editor.gridSize;
+            nodeNames[i] = nodes[i].name;
+            nodeDescriptions[i] = nodes[i].description;
         }
     }
 }
