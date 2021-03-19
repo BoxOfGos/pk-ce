@@ -6,9 +6,18 @@ using System.IO;
 
 public class AbilityTreeEditor : EditorWindow
 {
-    public int gridSize = 2000;
-    public int gridStep = 100;
-    public Vector2 gridScroll = new Vector2();
+    private Vector2 _gridScroll = new Vector2();
+
+    public float scale = 1f;
+    public float gridSize { get { return 2000f * scale; } }
+    public float gridStep { get { return 100f * scale; } }
+    public Vector2 gridScroll
+    {
+        get { return _gridScroll; }
+        set { _gridScroll = new Vector2(
+            Mathf.Clamp(value.x, 0f, gridSize - gridRect.width), 
+            Mathf.Clamp(value.y, 0f, gridSize - gridRect.height)); }
+    }
     public Rect gridRect;
     public Vector2 dataScroll = new Vector2();
     public Rect dataRect;
@@ -21,11 +30,12 @@ public class AbilityTreeEditor : EditorWindow
     public Vector2 mouseDragLocation = new Vector2();
 
     // EVENT HANDLING PARAMETERS
-    // The distance the draggedNode has ben dragged
     public float draggedDistance;
-    // If true, last mouse down event selected a node
-    public bool selectionFlag = false;
+    public bool forbidDeselectionFlag = false;
     public bool dragBoxFlag = false;
+    public List<Vector2> dragOrigins;
+    public Vector2 dragOffset = new Vector2();
+    public bool gridSnap = false;
 
     [MenuItem("Window/Pokemon/AbilityTreeEditor")]
     public static void ShowEditor()
@@ -41,10 +51,19 @@ public class AbilityTreeEditor : EditorWindow
 
     private void OnGUI()
     {
+        if (Event.current.type == EventType.ScrollWheel)
+        {
+            scale -= Event.current.delta.y * 0.01f;
+            scale = Mathf.Clamp(scale, 0.5f, 2f);
+
+
+        }
+            
+        
         EditorGUILayout.BeginHorizontal();
 
         // The node grid layout
-        gridScroll = EditorGUILayout.BeginScrollView(gridScroll, true, true);
+        EditorGUILayout.BeginScrollView(gridScroll, GUIStyle.none, GUIStyle.none);
         DrawNodeGrid();
         EditorGUILayout.EndScrollView();
         gridRect = GUILayoutUtility.GetLastRect();
@@ -74,7 +93,8 @@ public class AbilityTreeEditor : EditorWindow
 
         if (GUI.Button(new Rect(10, 90, 200, 30), new GUIContent("Test button")))
         {
-            
+            gridSnap = !gridSnap;
+            Debug.Log("Grid snap = " + gridSnap);
         }
 
         DrawMap(120);
@@ -95,12 +115,14 @@ public class AbilityTreeEditor : EditorWindow
     {
         Texture circle = Resources.Load<Texture>("Editor/circle");
 
+        // Map outline
         GUILayout.BeginArea(new Rect(5, position.height - mapSize - 20, mapSize, mapSize));
         GUI.backgroundColor = new Color(0, 0, 0, 0.5f);
         GUI.Box(new Rect(0, 0, mapSize, mapSize), "");
         GUI.backgroundColor = new Color(1, 1, 1, 0.5f);
         GUI.Box(new Rect(2, 2, mapSize - 4, mapSize - 4), "");
 
+        // Nodes
         GUI.backgroundColor = Color.clear;
         for (int i = 0; i < nodes.Count; i++)
         {
@@ -114,10 +136,28 @@ public class AbilityTreeEditor : EditorWindow
             else GUI.contentColor = Color.black;
 
             Vector2 nodePosition = new Vector2
-                (nodes[i].rect.position.x / gridSize * mapSize, nodes[i].rect.position.y / gridSize * mapSize);
-            GUI.Box(new Rect(nodePosition.x, nodePosition.y, 13, 13), circle);
+                (nodes[i].position.x / gridSize * mapSize, nodes[i].position.y / gridSize * mapSize);
+            GUI.Box(new Rect(nodePosition.x * scale, nodePosition.y * scale, 13, 13), circle);
         }
 
+        // White box
+        Handles.BeginGUI();
+        Handles.color = Color.white;
+        Vector3 corner0, corner1;
+        corner0 = new Vector3(gridScroll.x, gridScroll.y);
+        corner1 = new Vector3(gridRect.width, gridRect.height, 0);
+        corner0 *= mapSize / gridSize;
+        corner1 *= mapSize / gridSize;
+        Handles.DrawLines(new Vector3[]
+        {
+            corner0, corner0 + Vector3.right * corner1.x,
+            corner0, corner0 + Vector3.up * corner1.y,
+            corner0 + corner1, corner0 + Vector3.right * corner1.x,
+            corner0 + corner1, corner0 + Vector3.up * corner1.y
+        });
+        Handles.EndGUI();
+
+        Handles.color = Color.black;
         GUI.contentColor = GUI.backgroundColor = Color.white;
         GUILayout.EndArea();
     }
@@ -204,13 +244,15 @@ public class AbilityTreeEditor : EditorWindow
     // EVENT METHODS
     private void ProcessEvents(Event e)
     {
+        int controlId = GUIUtility.GetControlID(FocusType.Passive);
+
         if (gridRect.Contains(e.mousePosition))
         {
             foreach(AbilityNode node in nodes)
             {
                 Rect nodeRect = new Rect(
                     node.rect.position.x - gridScroll.x, node.rect.position.y - gridScroll.y,
-                    node.rect.width, node.rect.height);
+                    100, 100);
 
                 if (nodeRect.Contains(e.mousePosition))
                 {
@@ -219,10 +261,12 @@ public class AbilityTreeEditor : EditorWindow
                 }
             }
 
-
-            switch(e.type)
+            switch(e.GetTypeForControl(controlId))
             {
                 case EventType.MouseDown:
+                    
+                    GUIUtility.hotControl = controlId;
+
                     switch(e.button)
                     {
                         case 0:
@@ -235,27 +279,40 @@ public class AbilityTreeEditor : EditorWindow
                     }
                     break;
 
-                case EventType.MouseDrag:
-                    switch(e.button)
-                    {
-                        case 0:
-                            if (draggedNode != null)
-                                DragNodes(e);
-                            else
-                                UpdateBoxDrag(e);
-                            break;
-
-                        case 2:
-                            DragGridScroll(e);
-                            break;
-                    }
-                    break;
-
-                case EventType.MouseUp:
-                    if (dragBoxFlag)
-                        EndBoxDrag(e);
+                case EventType.ScrollWheel:
+                    Debug.Log(e.delta);
                     break;
             }
+        }
+
+        switch(e.GetTypeForControl(controlId))
+        {
+            case EventType.MouseDrag:
+                switch (e.button)
+                {
+                    case 0:
+                        if (draggedNode != null)
+                            DragNodes(e);
+                        else
+                            UpdateBoxDrag(e);
+                        break;
+
+                    case 2:
+                        DragGridScroll(e);
+                        break;
+                }
+                break;
+
+            case EventType.MouseUp:
+                if (dragBoxFlag)
+                    EndBoxDrag(e);
+
+                GUIUtility.hotControl = 0;
+                draggedNode = null;
+                draggedDistance = 0;
+                dragOffset = new Vector2();
+                dragOrigins = new List<Vector2>();
+                break;
         }
     }
 
@@ -300,11 +357,31 @@ public class AbilityTreeEditor : EditorWindow
     private void DragNodes(Event e)
     {
         draggedDistance += e.delta.magnitude;
+        dragOffset += e.delta;
 
-        foreach (AbilityNode node in selectedNodes)
-            node.rect = new Rect(
-                node.rect.x + e.delta.x, node.rect.y + e.delta.y,
-                node.rect.width, node.rect.height);
+        if (gridSnap)
+        {
+            for (int i = 0; i < dragOrigins.Count; i++)
+            {
+                Vector2 snappedCoords = new Vector2(dragOrigins[i].x + dragOffset.x, dragOrigins[i].y + dragOffset.y);
+                snappedCoords = new Vector2(
+                    Mathf.Round(snappedCoords.x / gridStep) * gridStep, 
+                    Mathf.Round(snappedCoords.y / gridStep) * gridStep);
+
+                if (i == dragOrigins.Count - 1)
+                    draggedNode.position = new Vector2(snappedCoords.x, snappedCoords.y);
+                else
+                    selectedNodes[i].position = new Vector2(snappedCoords.x, snappedCoords.y);
+            }
+        }
+        else
+        {
+            foreach (AbilityNode node in selectedNodes)
+                if (node != draggedNode)
+                    node.position += e.delta / scale;
+
+            draggedNode.position += e.delta / scale;
+        }
 
         GUI.changed = true;
         e.Use();
@@ -425,7 +502,7 @@ public class AbilityTreeSerializable
 
         for (int i = 0; i < arraySize; i++)
         {
-            nodePositions[i] = nodes[i].rect.position / editor.gridSize;
+            nodePositions[i] = nodes[i].position / editor.gridSize;
             nodeNames[i] = nodes[i].name;
             nodeDescriptions[i] = nodes[i].description;
         }
